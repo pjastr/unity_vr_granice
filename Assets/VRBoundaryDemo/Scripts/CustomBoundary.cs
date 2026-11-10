@@ -9,6 +9,9 @@ namespace VRBoundaryDemo
     /// "przykleja się" do fizycznego pokoju, a nie do wirtualnej sceny.
     /// Po wyśrodkowaniu widoku albo zmianie układu odniesienia (Floor Level / Stage) układ śledzenia
     /// przeskakuje względem pokoju; skrypt wykrywa skok pozy głowy i przelicza punkty, by zostały na miejscu.
+    /// Gdy przez autoLockSeconds (domyślnie 10 s) nie dodano ani nie usunięto punktu, a wielokąt ma min. 3 punkty,
+    /// edycja jest blokowana: trigger i cofanie nie działają, znika podgląd. Odblokowanie: Unlock() (krótki prawy grip)
+    /// albo Clear() (przytrzymany prawy grip).
     /// </summary>
     [RequireComponent(typeof(BoundaryVisual))]
     public class CustomBoundary : MonoBehaviour
@@ -24,6 +27,10 @@ namespace VRBoundaryDemo
         [Tooltip("Pokazuj promień i celownik (tylko gdy kontroler jest aktywny).")]
         public bool showPointer = true;
 
+        [Header("Blokada edycji")]
+        [Tooltip("Po tylu sekundach bez dodania/usunięcia punktu granica (min. 3 punkty) zostaje zablokowana. 0 = nigdy.")]
+        public float autoLockSeconds = 10f;
+
         [Header("Kolory promienia")]
         public Color rayColor = new Color(1f, 0.65f, 0.2f);
         public Color rayNoHitColor = new Color(0.7f, 0.7f, 0.7f);
@@ -33,6 +40,17 @@ namespace VRBoundaryDemo
         public bool PointerHit { get; private set; }
         /// <summary>Punkt trafienia w podłogę (przestrzeń śledzenia).</summary>
         public Vector3 PointerLocal { get; private set; }
+
+        /// <summary>Edycja zablokowana - granica zakończona.</summary>
+        public bool IsLocked { get; private set; }
+
+        /// <summary>Ile sekund zostało do automatycznej blokady (-1 = odliczanie nieaktywne).</summary>
+        public float SecondsToLock =>
+            IsLocked || autoLockSeconds <= 0f || !Shape.IsValid
+                ? -1f
+                : Mathf.Max(0f, autoLockSeconds - (Time.unscaledTime - lastEditTime));
+
+        float lastEditTime;
 
         Transform ray, reticle;
         ColorTint rayTint;
@@ -57,7 +75,30 @@ namespace VRBoundaryDemo
         void Update()
         {
             CompensateOriginJump();
+            UpdateAutoLock();
             UpdatePointer();
+        }
+
+        // ---------------- BLOKADA EDYCJI ----------------
+
+        void UpdateAutoLock()
+        {
+            if (IsLocked || autoLockSeconds <= 0f || !Shape.IsValid) return;
+            if (Time.unscaledTime - lastEditTime < autoLockSeconds) return;
+
+            IsLocked = true;
+            Haptics.PulseStatic(drawingHand, 0.8f, 0.2f);
+            DemoLog.Add($"<color=#FFD27F>Własna granica zablokowana</color> ({Shape.Count} pkt, {Shape.Area():0.0} m²) - " +
+                        $"brak zmian przez {autoLockSeconds:0} s. Krótki prawy grip = odblokuj");
+        }
+
+        /// <summary>Odblokowuje edycję (punkty zostają) i restartuje odliczanie.</summary>
+        public bool Unlock()
+        {
+            if (!IsLocked) return false;
+            IsLocked = false;
+            lastEditTime = Time.unscaledTime;
+            return true;
         }
 
         // ---------------- PROMIEŃ NA PODŁOGĘ ----------------
@@ -80,7 +121,7 @@ namespace VRBoundaryDemo
                     local.y = 0f;
                     PointerLocal = local;
                 }
-                Visual.previewActive = PointerHit && Shape.Count > 0 && Shape.Count < maxPoints;
+                Visual.previewActive = !IsLocked && PointerHit && Shape.Count > 0 && Shape.Count < maxPoints;
                 Visual.previewEnd = PointerLocal;
 
                 if (showPointer) DrawPointer(ctrl, space, PointerHit ? dist : maxRayLength * 0.4f);
@@ -113,9 +154,10 @@ namespace VRBoundaryDemo
             Vector3 d = b - a;
             ray.SetPositionAndRotation((a + b) * 0.5f, Quaternion.LookRotation(d.normalized, Vector3.up));
             ray.localScale = new Vector3(0.004f, 0.004f, d.magnitude);
-            rayTint.SetBaseColor(PointerHit ? rayColor : rayNoHitColor);
+            // Zablokowana granica: szary promień bez celownika - trigger nic nie doda.
+            rayTint.SetBaseColor(PointerHit && !IsLocked ? rayColor : rayNoHitColor);
 
-            reticle.gameObject.SetActive(PointerHit);
+            reticle.gameObject.SetActive(PointerHit && !IsLocked);
             if (PointerHit)
             {
                 reticle.SetPositionAndRotation(space.TransformPoint(PointerLocal + Vector3.up * 0.008f), space.rotation);
@@ -127,6 +169,11 @@ namespace VRBoundaryDemo
         /// <summary>Dodaje narożnik w miejscu celownika. Zwraca opis wyniku do dziennika.</summary>
         public bool AddPointAtPointer(out string message)
         {
+            if (IsLocked)
+            {
+                message = "granica zablokowana - krótki grip odblokowuje, przytrzymany czyści";
+                return false;
+            }
             if (!PointerHit)
             {
                 message = "promień nie trafia w podłogę - celuj niżej";
@@ -149,6 +196,7 @@ namespace VRBoundaryDemo
             }
             Shape.Add(PointerLocal);
             Visual.MarkDirty();
+            lastEditTime = Time.unscaledTime;
             message = Shape.Count < 3
                 ? $"punkt {Shape.Count} (potrzeba min. 3)"
                 : $"punkt {Shape.Count}, pole {Shape.Area():0.0} m²";
@@ -157,16 +205,20 @@ namespace VRBoundaryDemo
 
         public bool Undo()
         {
-            if (Shape.Count == 0) return false;
+            if (IsLocked || Shape.Count == 0) return false;
             Shape.RemoveLast();
             Visual.MarkDirty();
+            lastEditTime = Time.unscaledTime;
             return true;
         }
 
+        /// <summary>Usuwa wszystkie punkty i odblokowuje edycję (nowa granica).</summary>
         public void Clear()
         {
             Shape.Clear();
             Visual.MarkDirty();
+            IsLocked = false;
+            lastEditTime = Time.unscaledTime;
         }
 
         // ---------------- KOMPENSACJA SKOKU UKŁADU ŚLEDZENIA ----------------

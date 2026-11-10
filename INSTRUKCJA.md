@@ -180,14 +180,16 @@ Stoisz na turkusowym znaczniku w wirtualnym pokoju z siatką (kratka = 1 m). Wok
 | Wejście | Akcja |
 |---|---|
 | **Trigger** | Dodaj narożnik własnej granicy w miejscu pomarańczowego celownika na podłodze |
-| **Grip** (krótko) | Cofnij ostatni punkt |
-| **Grip** (przytrzymaj 1 s) | Wyczyść własną granicę |
+| **Grip** (krótko) | Cofnij ostatni punkt; gdy granica jest zablokowana – **odblokuj edycję** |
+| **Grip** (przytrzymaj 1 s) | Wyczyść własną granicę i zacznij nową |
 | **A** | Testy bliskości: **systemowy Play Area ↔ własna granica** |
 | **B** | Pokaż/ukryj wizualizację Play Area |
 | **Gałka ←/→** | Obrót o 45° |
 | **Klik gałki** | Powrót na start |
 
-Własna granica jest zamknięta od 3 punktów (ostatni łączy się z pierwszym). Po naciśnięciu **A** wszystkie ostrzeżenia, wibracje i wpisy w dzienniku dotyczą narysowanej granicy – możesz np. wyznaczyć mniejszy obszar wewnątrz Play Area i sprawdzić, jak aplikacja pilnuje własnych stref.
+Własna granica jest zamknięta od 3 punktów (ostatni łączy się z pierwszym).
+
+**Zakończenie rysowania (blokada edycji):** gdy granica ma co najmniej 3 punkty i przez **10 s** nie dodasz ani nie usuniesz punktu, edycja blokuje się sama – kontroler mocniej zawibruje, w dzienniku pojawi się wpis, znika linia podglądu i celownik, a promień robi się szary. Trigger i cofanie wtedy nie działają, więc nie dopiszesz punktu przypadkiem. Panel **GRANICE** pokazuje odliczanie do blokady i stan *ZABLOKOWANA*. Krótki **grip** odblokowuje edycję (punkty zostają, odliczanie startuje od nowa), a przytrzymany **grip** czyści granicę. Po naciśnięciu **A** wszystkie ostrzeżenia, wibracje i wpisy w dzienniku dotyczą narysowanej granicy – możesz np. wyznaczyć mniejszy obszar wewnątrz Play Area i sprawdzić, jak aplikacja pilnuje własnych stref.
 
 ### Lewy kontroler – system
 
@@ -258,6 +260,8 @@ Meta zaleca ponowne sprawdzanie granicy po wznowieniu aplikacji. `SystemBoundary
 ### 6.5 Własna granica – `CustomBoundary`
 Promień z prawego kontrolera jest przecinany z **płaszczyzną podłogi przestrzeni śledzenia** (`Plane(trackingSpace.up, trackingSpace.position)`) – bez fizyki i koliderów. Trigger zapisuje punkt w układzie `trackingSpace`, więc własna granica, tak jak systemowa, „przykleja się” do pokoju.
 
+Blokada edycji: każde dodanie lub cofnięcie punktu zapisuje czas ostatniej zmiany. Gdy wielokąt jest poprawny (min. 3 punkty), a od ostatniej zmiany minęło `autoLockSeconds`, ustawiane jest `IsLocked = true` – `AddPointAtPointer()` i `Undo()` są wtedy ignorowane. `Unlock()` (krótki grip) zdejmuje blokadę, `Clear()` (przytrzymany grip) czyści punkty i też ją zdejmuje.
+
 Po wyśrodkowaniu widoku albo zmianie Floor Level ↔ Stage układ śledzenia przeskakuje względem pokoju. Skrypt wykrywa skok pozy głowy (głowa fizycznie nie przesunie się o 25 cm lub 20° w jednej klatce) i przelicza punkty tym samym obrotem i przesunięciem.
 
 ### 6.6 Passthrough i ukrywanie granicy – `PassthroughBoundaryControl`
@@ -303,7 +307,7 @@ Wibracja w `OVRInput` wygasa sama po ok. 2 s, dlatego `Haptics` odświeża ciąg
 
 **Siła wibracji** – `Demo` › **Haptics**: *Master Amplitude*, częstotliwości.
 
-**Rysowanie** – `Boundaries/CustomBoundary` › **Custom Boundary**: ręka rysująca, minimalny odstęp i limit punktów.
+**Rysowanie** – `Boundaries/CustomBoundary` › **Custom Boundary**: ręka rysująca, minimalny odstęp, limit punktów i **Auto Lock Seconds** (czas do blokady edycji; 0 = bez blokady).
 
 **Nowa akcja na przycisk** – w `DemoActions.Update()`:
 ```csharp
@@ -331,6 +335,7 @@ Zacznij od **VR Boundary Demo › 3. Sprawdź bloki w scenie** – wskazuje wię
 | **Y** nie ukrywa granicy | Najpierw **X** (passthrough). Sprawdź *OVRManager › Quest Features › Passthrough Support* (≠ None), *Enable Passthrough* w OVRManager i aktualny Horizon OS. |
 | **X** nic nie robi | Brak bloku **Passthrough** – dodaj go i uruchom *3. Sprawdź bloki*. |
 | Czarne tło przy passthrough | W *OVRManager* zaznacz *Enable Passthrough* (robi to krok *3. Sprawdź bloki*). |
+| Trigger nie dodaje punktów, promień jest szary | Własna granica jest zablokowana (10 s bez zmian) – krótki prawy grip odblokowuje. |
 | Brak wibracji | Kontroler musi być aktywny (nie w trybie dłoni); sprawdź *Haptics › Master Amplitude*. |
 | Obraz zdublowany / dwie kamery | W scenie są dwa rigi lub zostawiona *Main Camera* – zostaw jeden blok Camera Rig. |
 | Czarny ekran / błędy URP | Uruchom ponownie krok 1 (przypina URP) i *Project Setup Tool › Fix All*. |

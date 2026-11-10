@@ -582,6 +582,7 @@ namespace VRBoundaryDemo.EditorTools
             "<b><color=#FFD27F>PRAWY KONTROLER – własna granica</color></b>\n" +
             "Trigger – dodaj narożnik w miejscu celownika na podłodze\n" +
             "Grip – cofnij ostatni punkt     przytrzymaj grip 1 s – wyczyść\n" +
+            "Po 10 s bez zmian granica się blokuje – krótki grip odblokowuje\n" +
             "A – testy bliskości: Play Area ↔ własna granica\n" +
             "B – pokaż/ukryj wizualizację Play Area\n" +
             "Gałka ←/→ – obrót o 45°     klik gałki – powrót na start\n\n" +

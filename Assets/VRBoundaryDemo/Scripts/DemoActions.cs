@@ -56,11 +56,17 @@ namespace VRBoundaryDemo
                 clearedThisHold = true;
                 if (customBoundary != null) customBoundary.Clear();
                 Haptics.PulseStatic(HandSide.Right, 0.9f, 0.25f);
-                DemoLog.Add("Prawy grip (przytrzymany): wyczyszczono własną granicę");
+                DemoLog.Add("Prawy grip (przytrzymany): wyczyszczono własną granicę - możesz rysować nową");
             }
             if (OVRInput.GetUp(OVRInput.Button.PrimaryHandTrigger, R))
             {
-                if (!clearedThisHold && customBoundary != null)
+                if (!clearedThisHold && customBoundary != null && customBoundary.IsLocked)
+                {
+                    customBoundary.Unlock();
+                    Haptics.PulseStatic(HandSide.Right, 0.5f, 0.08f);
+                    DemoLog.Add($"Prawy grip: odblokowano edycję własnej granicy (blokada po {customBoundary.autoLockSeconds:0} s bez zmian)");
+                }
+                else if (!clearedThisHold && customBoundary != null)
                 {
                     bool ok = customBoundary.Undo();
                     Haptics.PulseStatic(HandSide.Right, ok ? 0.4f : 0.15f, 0.05f);

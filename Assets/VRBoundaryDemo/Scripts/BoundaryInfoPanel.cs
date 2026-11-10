@@ -62,6 +62,12 @@ namespace VRBoundaryDemo
                 if (s.IsValid) sb.Append($"   obwód {s.Perimeter():0.0} m   pole {s.Area():0.0} m²");
                 else if (s.Count > 0) sb.Append("   (potrzeba min. 3)");
                 sb.Append('\n');
+                if (custom.IsLocked)
+                    sb.Append("Edycja: <color=#FFD27F>ZABLOKOWANA</color> (krótki prawy grip = odblokuj)\n");
+                else if (custom.SecondsToLock >= 0f)
+                    sb.Append($"Edycja: aktywna – blokada za {custom.SecondsToLock:0} s bez zmian\n");
+                else
+                    sb.Append("Edycja: aktywna\n");
             }
 
             if (mon != null)
