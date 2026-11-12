@@ -35,7 +35,15 @@ namespace VRBoundaryDemo
                 {
                     sb.Append($"Play Area: {sys.Dimensions.x:0.00} × {sys.Dimensions.z:0.00} m   ")
                       .Append($"pole {sys.Shape.Area():0.0} m²   punkty: {sys.Shape.Count}\n");
+                    sb.Append("Źródło: ").Append(sys.ShapeSource);
+                    sb.Append(SystemBoundary.IsStageOrigin
+                        ? "   <color=#7CFC7C>Stage – prostokąt w miejscu pokoju</color>\n"
+                        : "   <color=#FFD27F>nie Stage – prostokąt może być wokół miejsca startu</color>\n");
                 }
+                sb.Append("Unity XR (TryGetBoundaryPoints): ").Append(sys.XrStatus);
+                if (sys.XrHasPoints) sb.Append($"  {sys.XrSize.x:0.00} × {sys.XrSize.y:0.00} m");
+                sb.Append('\n');
+                sb.Append("<size=22><color=#A0A0A0>OpenXR podaje tylko prostokąt Roomscale; kształt granicy i granica stacjonarna są niedostępne</color></size>\n");
                 sb.Append($"Odczyt: {Time.unscaledTime - sys.LastRefreshTime:0.0} s temu\n");
             }
             sb.Append("Układ odniesienia: <b>").Append(mgr != null ? mgr.trackingOriginType.ToString() : "-").Append("</b>\n");

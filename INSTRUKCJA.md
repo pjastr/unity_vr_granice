@@ -125,7 +125,7 @@ Otwórz **Meta › Tools › Building Blocks**. Dla każdego bloku z tabeli: **k
 Bloku **Hand Tracking** nie dodawaj – demo obsługuje wyłącznie kontrolery.
 
 ### Krok 6 – `VR Boundary Demo › 3. Sprawdź bloki w scenie`
-Pokazuje raport `[OK]` / `[BRAK]` dla każdego bloku, ostrzega przed zdublowanym rigiem lub zbędną kamerą, ustawia w `OVRManager` **Tracking Origin = Floor Level** i włącza passthrough w `OVRManager` (*Enable Passthrough*), jeśli jest blok Passthrough. Gdy wszystko jest `[OK]`, zapisz scenę (**Ctrl+S**).
+Pokazuje raport `[OK]` / `[BRAK]` dla każdego bloku, ostrzega przed zdublowanym rigiem lub zbędną kamerą, ustawia w `OVRManager` **Tracking Origin = Stage** (tylko w tym układzie prostokąt obszaru gry leży w prawdziwym miejscu pokoju – patrz [6.3](#63-odczyt-granicy-systemowej--ovrboundary)) i włącza passthrough w `OVRManager` (*Enable Passthrough*), jeśli jest blok Passthrough. Gdy wszystko jest `[OK]`, zapisz scenę (**Ctrl+S**).
 
 > Ponowne uruchomienie kroku 4 (np. po zmianach w skryptach) **odświeża** tylko obiekty demo – Building Blocks zostają w scenie.
 
@@ -135,7 +135,7 @@ Pokazuje raport `[OK]` / `[BRAK]` dla każdego bloku, ostrzega przed zdublowanym
 
 ### Przygotowanie gogli (jednorazowo)
 1. Aplikacja **Meta Horizon** na telefonie › Urządzenia › Quest 3S › **Ustawienia gogli › Tryb dewelopera** › włącz.
-2. W goglach ustaw granicę w trybie **Roomscale** (Ustawienia › Granica › Utwórz granicę / Obszar gry). Przy granicy **stacjonarnej** obszar gry jest bardzo mały i trudniej przetestować demo.
+2. W goglach ustaw granicę w trybie **Roomscale** (Ustawienia › Granica › Utwórz granicę / Obszar gry). Granica **stacjonarna** nie jest udostępniana aplikacjom przez OpenXR – niebieski prostokąt jej nie pokaże.
 3. Podłącz gogle kablem USB-C do komputera. W goglach pojawi się pytanie **„Zezwolić na debugowanie USB?”** – zaznacz *Zawsze zezwalaj z tego komputera* i potwierdź.
 4. Sprawdź połączenie w Unity: **File › Build Profiles › Android** › lista **Run Device** › **Refresh** – gogle powinny pojawić się na liście.
 
@@ -208,7 +208,7 @@ Własna granica jest zamknięta od 3 punktów (ostatni łączy się z pierwszym)
 2. **Wyjedź gałką** w drugi koniec sceny – niebieska linia jedzie razem z Tobą. Granica należy do **fizycznego pokoju**, nie do wirtualnej sceny.
 3. **Narysuj własną granicę** (trigger), przełącz testy na nią (**A**) i przejdź przez jej krawędź.
 4. **X**, potem **Y** – passthrough i prośba o ukrycie granicy. Panel pokazuje *prośbę* i *faktyczny stan* (decyduje system). Wyłączenie passthrough (**X**) automatycznie cofa prośbę – bez passthrough system i tak nie ukryje granicy.
-5. **Menu ☰** – przełącz na **Stage**: początek układu przenosi się na środek obszaru gry (scena „przeskakuje”), granica zostaje na miejscu, a własna granica jest przeliczana.
+5. **Menu ☰** – przełącz na **Floor Level** i z powrotem na **Stage**: początek układu przeskakuje między miejscem startu a środkiem obszaru gry (scena „przeskakuje”). W Floor Level niebieski prostokąt może leżeć wokół miejsca startu zamiast w prawdziwym miejscu – to ograniczenie danych z OpenXR. Własna granica jest przeliczana i zostaje na miejscu.
 6. **Przytrzymaj przycisk Meta** (wyśrodkowanie widoku) – w dzienniku pojawi się wpis o recenter i ponownym odczycie granicy.
 
 Na panelu **GRANICE** widać na żywo: czy granica jest skonfigurowana, rozmiar i pole Play Area, układ odniesienia, stan passthrough i ukrywania granicy, liczbę punktów własnej granicy oraz strefę i odległość od krawędzi dla głowy i obu kontrolerów.
@@ -246,7 +246,15 @@ bool configured = boundary.GetConfigured();                               // czy
 Vector3[] pts   = boundary.GetGeometry(OVRBoundary.BoundaryType.PlayArea); // narożniki, przestrzeń śledzenia, y = 0
 Vector3 size    = boundary.GetDimensions(OVRBoundary.BoundaryType.PlayArea); // szerokość, 0, głębokość
 ```
-**Play Area** to prostokąt wpisany w granicę narysowaną przez użytkownika. W backendzie OpenXR przestarzałe są: `BoundaryType.OuterBoundary`, `TestNode()`, `TestPoint()`, `GetVisible()`, `SetVisible()` – demo ich nie używa. Testy „czy jestem w środku i jak daleko do krawędzi” liczy samo (`BoundaryShape`).
+**Czym jest Play Area (obszar gry)?** Gdy w trybie Roomscale obrysowujesz wolne miejsce w pokoju, powstaje granica o dowolnym kształcie (*outer boundary*) – to ją pokazuje systemowa siatka. System wylicza z niej automatycznie **największy prostokąt** mieszczący się w środku, o bokach równoległych do osi przestrzeni stage – to jest **Play Area**. Środek tego prostokąta to początek układu **Stage**.
+
+**Ograniczenia na OpenXR (Quest):**
+- aplikacja dostaje tylko ten prostokąt (szerokość × głębokość granic przestrzeni STAGE), a nie narysowany kształt – dlatego niebieska linia to zawsze prostokąt mniejszy niż systemowa siatka,
+- granica **stacjonarna** (koło wokół gracza) nie jest udostępniana wcale – jej zmiany nie wpłyną na niebieski prostokąt,
+- prostokąt jest liczony względem środka obszaru gry, więc leży we właściwym miejscu tylko w układzie **Stage**; w Floor Level może się rysować wokół miejsca startu. Dlatego `SystemBoundary` przy starcie przełącza rig na Stage (*Force Stage Origin*),
+- dla porównania panel pokazuje też drugie źródło – `XRInputSubsystem.TryGetBoundaryPoints` z Unity XR (z jego zdarzeniem `boundaryChanged`). Gdy `OVRBoundary` nic nie zwróci, a Unity XR tak, rysowane są punkty z Unity XR.
+
+W backendzie OpenXR przestarzałe są: `BoundaryType.OuterBoundary`, `TestNode()`, `TestPoint()`, `GetVisible()`, `SetVisible()` – demo ich nie używa. Testy „czy jestem w środku i jak daleko do krawędzi” liczy samo (`BoundaryShape`).
 
 Meta zaleca ponowne sprawdzanie granicy po wznowieniu aplikacji. `SystemBoundary` odczytuje ją: przy starcie, co 2 s, po założeniu gogli (`OVRManager.HMDMounted`), po odzyskaniu śledzenia (`OVRManager.TrackingAcquired`), po wznowieniu (`OnApplicationPause(false)`), po wyśrodkowaniu widoku (`OVRManager.display.RecenteredPose`) i po zmianie układu odniesienia.
 
@@ -277,6 +285,8 @@ OVRManager.BoundaryVisibilityChanged += v => Debug.Log(v);        // zdarzenie z
 - Do aplikacji w całości bez granicy (tylko MR, bez treści immersyjnej) służy wpis `com.oculus.feature.BOUNDARYLESS_APP` w `AndroidManifest.xml` – demo go **nie** używa, bo jest aplikacją VR.
 
 ### 6.7 Układ odniesienia – Floor Level i Stage
+Demo startuje w **Stage** (ustawia to `SystemBoundary`, a w scenie krok *3. Sprawdź bloki*). Przycisk **Menu ☰** pozwala porównać oba układy.
+
 | | Floor Level | Stage |
 |---|---|---|
 | Początek układu | miejsce wyśrodkowania widoku, na podłodze | środek obszaru gry, na podłodze |
@@ -330,8 +340,8 @@ Zacznij od **VR Boundary Demo › 3. Sprawdź bloki w scenie** – wskazuje wię
 | Gogle nie są widoczne w *Run Device* | Kabel z transmisją danych, potwierdź „Zezwól na debugowanie USB” w goglach, sprawdź tryb dewelopera, kliknij *Refresh*. |
 | Aplikacja startuje jako płaskie okno 2D | Nie zaznaczono **OpenXR + Meta XR** w *XR Plug-in Management › Android* (krok 2) albo brak bloku **Camera Rig**. |
 | Panel: „granica nieskonfigurowana” / brak niebieskiej linii | Ustaw granicę w goglach (Ustawienia › Granica). W edytorze bez gogli granicy nie ma – to normalne. |
-| Play Area jest bardzo mały | Granica stacjonarna – przełącz na **Roomscale** i narysuj większy obszar. |
-| Linia granicy nie pokrywa się z podłogą / jest przesunięta | Uruchom *3. Sprawdź bloki* (Floor Level), wyśrodkuj widok (przytrzymaj przycisk Meta) albo naciśnij lewy trigger. |
+| Niebieski prostokąt jest zawsze taki sam / nie reaguje na granicę stacjonarną | Ograniczenie OpenXR: aplikacja dostaje tylko prostokąt obszaru gry z trybu **Roomscale**; granica stacjonarna i kształt granicy nie są udostępniane (punkt 6.3). Przełącz gogle na Roomscale i porównaj na panelu wymiary z `OVRBoundary` i z Unity XR. |
+| Niebieski prostokąt jest przesunięty względem systemowej siatki | Sprawdź na panelu, czy układ to **Stage** (Menu ☰). Prostokąt zawsze jest mniejszy niż siatka – to największy prostokąt wpisany w narysowaną granicę. |
 | **Y** nie ukrywa granicy | Najpierw **X** (passthrough). Sprawdź *OVRManager › Quest Features › Passthrough Support* (≠ None), *Enable Passthrough* w OVRManager i aktualny Horizon OS. |
 | **X** nic nie robi | Brak bloku **Passthrough** – dodaj go i uruchom *3. Sprawdź bloki*. |
 | Czarne tło przy passthrough | W *OVRManager* zaznacz *Enable Passthrough* (robi to krok *3. Sprawdź bloki*). |

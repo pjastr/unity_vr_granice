@@ -19,7 +19,7 @@ namespace VRBoundaryDemo.EditorTools
     ///  1. Konfiguruj projekt dla Meta Quest - Android/Quest, URP, kontrolery, passthrough, szybsza kompilacja IL2CPP.
     ///  2. Zbuduj scenę demo - otoczenie z prymitywów, panele, logika granic.
     ///     Rig kamery, kontrolery i passthrough dodaje się z okna Building Blocks.
-    ///  3. Sprawdź bloki w scenie - raport, których Building Blocks brakuje (+ Floor Level).
+    ///  3. Sprawdź bloki w scenie - raport, których Building Blocks brakuje (+ Tracking Origin = Stage).
     ///  4. Build And Run (USB) - buduje APK (Development + Script Debugging) i uruchamia na goglach.
     /// </summary>
     public static class VRBoundaryDemoSetup
@@ -231,7 +231,7 @@ namespace VRBoundaryDemo.EditorTools
 
         /// <summary>
         /// Sprawdza otwartą scenę: wymagane Building Blocks, duplikaty, zbędne kamery.
-        /// Przy fix = true ustawia też Tracking Origin = Floor Level i włącza passthrough w OVRManager.
+        /// Przy fix = true ustawia też Tracking Origin = Stage i włącza passthrough w OVRManager.
         /// </summary>
         static string CheckScene(bool fix, out bool ready)
         {
@@ -261,7 +261,8 @@ namespace VRBoundaryDemo.EditorTools
             var manager = Object.FindAnyObjectByType<OVRManager>();
             if (manager != null && fix)
             {
-                SetEnum(manager, "FloorLevel", false, "_trackingOriginType", "m_TrackingOriginType", "trackingOriginType");
+                // Stage: początek układu w środku obszaru gry - tylko wtedy prostokąt Play Area pokrywa się z pokojem.
+                SetEnum(manager, "Stage", false, "_trackingOriginType", "m_TrackingOriginType", "trackingOriginType");
                 if (layers.Length > 0 && !manager.isInsightPassthroughEnabled)
                 {
                     Undo.RecordObject(manager, "Enable Passthrough");

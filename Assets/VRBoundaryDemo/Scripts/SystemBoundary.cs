@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.XR;
 
 namespace VRBoundaryDemo
 {
@@ -12,6 +14,14 @@ namespace VRBoundaryDemo
     /// GetVisible/SetVisible są przestarzałe).
     /// Dane są odczytywane ponownie: co kilka sekund, po założeniu gogli, po odzyskaniu śledzenia,
     /// po wznowieniu aplikacji, po wyśrodkowaniu widoku i po zmianie układu odniesienia.
+    ///
+    /// OGRANICZENIA OpenXR na Quest:
+    ///  - aplikacja dostaje tylko PROSTOKĄT obszaru gry (granice przestrzeni STAGE: szerokość × głębokość),
+    ///    a nie kształt narysowany w ustawieniach gogli; granica stacjonarna nie jest udostępniana wcale,
+    ///  - prostokąt jest wyśrodkowany w początku przestrzeni STAGE - pokrywa się z pokojem tylko wtedy,
+    ///    gdy rig używa układu Stage (dlatego forceStageOrigin = true),
+    ///  - dla porównania odczytywane jest też drugie źródło: XRInputSubsystem.TryGetBoundaryPoints (Unity XR),
+    ///    wraz ze zdarzeniem boundaryChanged.
     /// </summary>
     [DefaultExecutionOrder(-100)]
     public class SystemBoundary : MonoBehaviour
@@ -21,6 +31,9 @@ namespace VRBoundaryDemo
         [Tooltip("Co ile sekund ponownie odczytywać granicę (0 = tylko przy zdarzeniach).")]
         public float autoRefreshInterval = 2f;
 
+        [Tooltip("Przy starcie ustaw w OVRManager układ Stage - tylko w nim prostokąt obszaru gry leży w prawdziwym miejscu pokoju.")]
+        public bool forceStageOrigin = true;
+
         public BoundaryShape Shape { get; } = new BoundaryShape();
         public bool Configured { get; private set; }
         public Vector3 Dimensions { get; private set; }
@@ -28,6 +41,22 @@ namespace VRBoundaryDemo
         public int Version { get; private set; }
         public string Status { get; private set; } = "jeszcze nie odczytano";
         public float LastRefreshTime { get; private set; } = -1f;
+
+        /// <summary>Wynik drugiego źródła (Unity XRInputSubsystem) - do porównania na panelu.</summary>
+        public bool XrHasPoints { get; private set; }
+        public int XrPointCount { get; private set; }
+        public Vector2 XrSize { get; private set; }
+        public string XrStatus { get; private set; } = "-";
+        /// <summary>Źródło punktów aktualnie rysowanych na niebiesko.</summary>
+        public string ShapeSource { get; private set; } = "-";
+
+        /// <summary>Czy prostokąt leży w prawdziwym miejscu pokoju (tylko w układzie Stage).</summary>
+        public static bool IsStageOrigin =>
+            OVRManager.instance != null && OVRManager.instance.trackingOriginType == OVRManager.TrackingOrigin.Stage;
+
+        readonly List<XRInputSubsystem> xrSubsystems = new List<XRInputSubsystem>();
+        readonly List<Vector3> xrPoints = new List<Vector3>();
+        XRInputSubsystem subscribedXr;
 
         /// <summary>Do kiedy spodziewamy się skoku układu śledzenia (wyśrodkowanie, zmiana origin).</summary>
         public static float OriginChangeWindowUntil { get; private set; }
@@ -58,6 +87,8 @@ namespace VRBoundaryDemo
             OVRManager.TrackingAcquired -= OnTrackingAcquired;
             if (subscribedDisplay != null) subscribedDisplay.RecenteredPose -= OnRecentered;
             subscribedDisplay = null;
+            if (subscribedXr != null) subscribedXr.boundaryChanged -= OnXrBoundaryChanged;
+            subscribedXr = null;
         }
 
         void OnDestroy()
@@ -65,7 +96,18 @@ namespace VRBoundaryDemo
             if (Instance == this) Instance = null;
         }
 
-        void Start() => Refresh("start aplikacji");
+        void Start()
+        {
+            var mgr = OVRManager.instance;
+            if (forceStageOrigin && mgr != null && mgr.trackingOriginType != OVRManager.TrackingOrigin.Stage)
+            {
+                ExpectOriginChange();
+                mgr.trackingOriginType = OVRManager.TrackingOrigin.Stage;
+                DemoLog.Add("Układ odniesienia ustawiony na Stage (środek = środek obszaru gry)");
+                RefreshSoon(null);
+            }
+            Refresh("start aplikacji");
+        }
 
         void Update()
         {
@@ -74,6 +116,11 @@ namespace VRBoundaryDemo
             {
                 subscribedDisplay = OVRManager.display;
                 subscribedDisplay.RecenteredPose += OnRecentered;
+            }
+            if (subscribedXr == null)
+            {
+                subscribedXr = GetXrInput();
+                if (subscribedXr != null) subscribedXr.boundaryChanged += OnXrBoundaryChanged;
             }
 
             if (delayedRefreshAt > 0f && Time.unscaledTime >= delayedRefreshAt)
@@ -94,6 +141,7 @@ namespace VRBoundaryDemo
         }
 
         void OnHmdMounted() => RefreshSoon("założono gogle");
+        void OnXrBoundaryChanged(XRInputSubsystem _) => RefreshSoon("zdarzenie XRInputSubsystem.boundaryChanged");
         void OnTrackingAcquired() => RefreshSoon("odzyskano śledzenie");
 
         void OnRecentered()
@@ -117,6 +165,7 @@ namespace VRBoundaryDemo
         {
             nextAuto = Time.unscaledTime + Mathf.Max(0.5f, autoRefreshInterval);
             LastRefreshTime = Time.unscaledTime;
+            ReadXrSubsystem();
 
             OVRBoundary boundary = OVRManager.boundary;
             if (boundary == null)
@@ -143,9 +192,20 @@ namespace VRBoundaryDemo
                 return;
             }
 
+            // Gdy OVRBoundary nic nie dało, a Unity XR ma punkty - rysujemy te z Unity XR.
+            ShapeSource = "OVRBoundary";
+            if ((geometry == null || geometry.Length < 3) && XrHasPoints)
+            {
+                geometry = xrPoints.ToArray();
+                Vector2 sz = XrSize;
+                dims = new Vector3(sz.x, 0f, sz.y);
+                configured = true;
+                ShapeSource = "XRInputSubsystem";
+            }
+
             string status;
-            if (!configured) status = Application.isEditor ? "brak danych (edytor bez gogli)" : "granica nieskonfigurowana";
-            else if (geometry == null || geometry.Length < 3) status = "skonfigurowana, ale bez punktów Play Area";
+            if (!configured) status = Application.isEditor ? "brak danych (edytor bez gogli)" : "brak obszaru gry (granica stacjonarna lub wyłączona?)";
+            else if (geometry == null || geometry.Length < 3) status = "brak prostokąta obszaru gry (granica stacjonarna?)";
             else status = "OK";
             SetStatus(configured, geometry, dims, status, reason);
         }
@@ -173,6 +233,39 @@ namespace VRBoundaryDemo
                 DemoLog.Add("Granica systemowa: " + desc + (reason != null ? $" ({reason})" : ""));
             }
             if (shapeChanged) Changed?.Invoke();
+        }
+
+        void ReadXrSubsystem()
+        {
+            XrHasPoints = false;
+            XrPointCount = 0;
+            XrSize = Vector2.zero;
+            var input = GetXrInput();
+            if (input == null) { XrStatus = "brak podsystemu XR"; return; }
+
+            xrPoints.Clear();
+            bool ok = false;
+            try { ok = input.TryGetBoundaryPoints(xrPoints); }
+            catch (Exception e) { XrStatus = "błąd: " + e.Message; return; }
+
+            XrPointCount = xrPoints.Count;
+            XrHasPoints = ok && xrPoints.Count >= 3;
+            if (XrHasPoints)
+            {
+                var tmp = new BoundaryShape();
+                tmp.Set(xrPoints);
+                XrSize = tmp.BoundsSize();
+            }
+            XrStatus = !ok ? "niedostępne" : XrHasPoints ? "OK" : "0 punktów";
+        }
+
+        XRInputSubsystem GetXrInput()
+        {
+            xrSubsystems.Clear();
+            SubsystemManager.GetSubsystems(xrSubsystems);
+            foreach (var s in xrSubsystems)
+                if (s != null && s.running) return s;
+            return null;
         }
 
         bool HasChanged(Vector3[] geometry)
